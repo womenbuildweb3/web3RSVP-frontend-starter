@@ -1,8 +1,16 @@
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { ethers } from "ethers";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount } from "wagmi";
+import Alert from "../components/Alert";
+import connectContract from "../utils/connectContract";
+import getRandomImage from "../utils/getRandomImage";
 
 export default function CreateEvent() {
+  const { data: account } = useAccount();
+
   const [eventName, setEventName] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
@@ -11,13 +19,79 @@ export default function CreateEvent() {
   const [eventLink, setEventLink] = useState("");
   const [eventDescription, setEventDescription] = useState("");
 
+  const [success, setSuccess] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [loading, setLoading] = useState(null);
+  const [eventID, setEventID] = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    console.log("Form submitted")
+
+    const body = {
+      name: eventName,
+      description: eventDescription,
+      link: eventLink,
+      image: getRandomImage(),
+    };
+
+    try {
+      const response = await fetch("/api/store-event-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (response.status !== 200) {
+        alert("Oops! Something went wrong. Please refresh and try again.");
+      } else {
+        console.log("Form successfully submitted!");
+        let responseJSON = await response.json();
+        await createEvent(responseJSON.cid);
+      }
+      // check response, if success is false, dont take them to success page
+    } catch (error) {
+      alert(
+        `Oops! Something went wrong. Please refresh and try again. Error ${error}`
+      );
+    }
   }
 
-  
+  const createEvent = async (cid) => {
+    try {
+      const rsvpContract = connectContract();
+
+      if (rsvpContract) {
+        let deposit = ethers.utils.parseEther(refund);
+        let eventDateAndTime = new Date(`${eventDate} ${eventTime}`);
+        let eventTimestamp = eventDateAndTime.getTime();
+        let eventDataCID = cid;
+
+        const txn = await rsvpContract.CreateNewEvent(
+          eventTimestamp,
+          deposit,
+          maxCapacity,
+          eventDataCID,
+          { gasLimit: 900000 }
+        );
+
+        setLoading(true);
+        console.log("Minting...", txn.hash);
+        let wait = await txn.wait();
+        console.log("Minted -- ", txn.hash);
+
+        setEventID(wait.events[0].args[0]);
+        setSuccess(true);
+        setLoading(false);
+        setMessage("Your event has been created successfully.");
+      } else {
+        console.log("Error getting contract.");
+      }
+    } catch (error) {
+      setSuccess(false);
+      setMessage(`There was an error creating your event: ${error.message}`);
+      setLoading(false);
+      console.log(error);
+    }
+  };
 
   useEffect(() => {
     // disable scroll on <input> elements of type number
@@ -38,12 +112,36 @@ export default function CreateEvent() {
         />
       </Head>
       <section className="relative py-12">
-    
+        {loading && (
+          <Alert
+            alertType={"loading"}
+            alertBody={"Please wait"}
+            triggerAlert={true}
+            color={"white"}
+          />
+        )}
+        {success && (
+          <Alert
+            alertType={"success"}
+            alertBody={message}
+            triggerAlert={true}
+            color={"palegreen"}
+          />
+        )}
+        {success === false && (
+          <Alert
+            alertType={"failed"}
+            alertBody={message}
+            triggerAlert={true}
+            color={"palevioletred"}
+          />
+        )}
+        {!success && (
           <h1 className="text-3xl tracking-tight font-extrabold text-gray-900 sm:text-4xl md:text-5xl mb-4">
             Create your virtual event
           </h1>
-        
-     
+        )}
+        {account && !success && (
           <form
             onSubmit={handleSubmit}
             className="space-y-8 divide-y divide-gray-200"
@@ -216,12 +314,21 @@ export default function CreateEvent() {
               </div>
             </div>
           </form>
-        
-
-          {/* <section className="flex flex-col items-start py-8">
+        )}
+        {success && eventID && (
+          <div>
+            Success! Please wait a few minutes, then check out your event page{" "}
+            <span className="font-bold">
+              <Link href={`/event/${eventID}`}>here</Link>
+            </span>
+          </div>
+        )}
+        {!account && (
+          <section className="flex flex-col items-start py-8">
             <p className="mb-4">Please connect your wallet to create events.</p>
-          </section> */}
-
+            <ConnectButton />
+          </section>
+        )}
       </section>
     </div>
   );
